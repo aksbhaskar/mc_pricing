@@ -25,7 +25,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Note: benchmarks/*.png are intentionally committed — the README embeds them.
+# Note: benchmarks/*.png are intentionally committed, since the README embeds them.
 
 # Editor / OS
 .vscode/

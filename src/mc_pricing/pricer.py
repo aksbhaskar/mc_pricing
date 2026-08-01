@@ -35,7 +35,7 @@ class PricingResult:
     Attributes
     ----------
     result:
-        The :class:`~mc_pricing.stats.MCResult` — price estimate, standard
+        The :class:`~mc_pricing.stats.MCResult`: price estimate, standard
         error, and confidence interval.
     antithetic:
         Whether antithetic variates were used.

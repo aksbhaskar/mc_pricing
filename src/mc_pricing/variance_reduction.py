@@ -1,7 +1,7 @@
 r"""Variance-reduction techniques for Monte Carlo option pricing.
 
 Two complementary techniques are implemented, both of which leave the estimator
-**unbiased** while shrinking its variance — meaning the confidence interval
+**unbiased** while shrinking its variance, meaning the confidence interval
 narrows for the same number of paths (equivalently, fewer paths are needed for
 a target accuracy).
 

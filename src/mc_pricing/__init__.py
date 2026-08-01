@@ -1,17 +1,17 @@
-"""mc_pricing — a Monte Carlo option-pricing engine for vanilla European options.
+"""mc_pricing: a Monte Carlo option-pricing engine for vanilla European options.
 
 The package is organised in layers, each in its own module:
 
-* :mod:`mc_pricing.option` — the :class:`OptionSpec` value object and payoff type.
-* :mod:`mc_pricing.black_scholes` — closed-form Black-Scholes-Merton prices and
+* :mod:`mc_pricing.option`: the :class:`OptionSpec` value object and payoff type.
+* :mod:`mc_pricing.black_scholes`: closed-form Black-Scholes-Merton prices and
   Greeks (the analytical ground truth).
-* :mod:`mc_pricing.engine` — exact geometric-Brownian-motion terminal sampling.
-* :mod:`mc_pricing.payoff` — vanilla call/put payoff functions.
-* :mod:`mc_pricing.variance_reduction` — antithetic and control variates.
-* :mod:`mc_pricing.pricer` — the user-facing :func:`monte_carlo_price`.
-* :mod:`mc_pricing.greeks` — pathwise and finite-difference Monte Carlo Greeks.
-* :mod:`mc_pricing.stats` — confidence intervals and estimate summaries.
-* :mod:`mc_pricing.implied_vol` — Brent's-method implied-volatility solver.
+* :mod:`mc_pricing.engine`: exact geometric-Brownian-motion terminal sampling.
+* :mod:`mc_pricing.payoff`: vanilla call/put payoff functions.
+* :mod:`mc_pricing.variance_reduction`: antithetic and control variates.
+* :mod:`mc_pricing.pricer`: the user-facing :func:`monte_carlo_price`.
+* :mod:`mc_pricing.greeks`: pathwise and finite-difference Monte Carlo Greeks.
+* :mod:`mc_pricing.stats`: confidence intervals and estimate summaries.
+* :mod:`mc_pricing.implied_vol`: Brent's-method implied-volatility solver.
 
 Quick start
 -----------

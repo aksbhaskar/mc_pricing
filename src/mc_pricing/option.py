@@ -31,7 +31,7 @@ class OptionType(str, Enum):
 
     Inheriting from :class:`str` makes the enum trivially serialisable and
     lets callers write ``OptionType("call")`` or compare directly against the
-    string ``"call"`` — convenient when specs are built from config files.
+    string ``"call"``, convenient when specs are built from config files.
     """
 
     CALL = "call"

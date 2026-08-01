@@ -30,7 +30,7 @@ differences, and they need no bump size.
 
 Finite differences with common random numbers (Gamma, Theta, Rho)
 -----------------------------------------------------------------
-Gamma is a *second* derivative (the pathwise first derivative — an indicator —
+Gamma is a *second* derivative (the pathwise first derivative, an indicator,
 is no longer differentiable), and Theta/Rho are conventionally quoted via
 re-pricing, so we bump-and-reprice. Crucially the bumped and base prices are
 computed from the **same** normals :math:`Z` (common random numbers): the

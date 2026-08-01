@@ -10,7 +10,7 @@ volatility :math:`\sigma_{\text{imp}}` solving
 
 We solve this root-finding problem with Brent's method, which combines the
 guaranteed convergence of bisection with the speed of inverse-quadratic
-interpolation — robust and derivative-free, so it never diverges the way a
+interpolation, robust and derivative-free, so it never diverges the way a
 naive Newton iteration can when Vega is tiny (deep in/out of the money).
 """
 

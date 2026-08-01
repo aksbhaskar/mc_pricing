@@ -149,7 +149,7 @@ def vega(spec: OptionSpec) -> float:
     r"""Sensitivity of price to volatility, :math:`\partial V/\partial\sigma`.
 
     :math:`\mathcal{V} = S e^{-qT}\,\phi(d_1)\,\sqrt T`; identical for calls
-    and puts. Reported per unit (absolute) change in volatility — divide by
+    and puts. Reported per unit (absolute) change in volatility. Divide by
     100 for the "per 1 vol point" convention.
     """
     d = _compute_d(spec)

@@ -124,7 +124,7 @@ def _normal_quantile(p: float) -> float:
     r"""Inverse standard-normal CDF (the probit function) :math:`\Phi^{-1}(p)`.
 
     Implemented with Acklam's rational approximation, which is accurate to
-    roughly 1e-9 across the whole open interval — more than enough for
+    roughly 1e-9 across the whole open interval, more than enough for
     confidence-interval half-widths and avoids a hard SciPy dependency in this
     otherwise NumPy-only module.
     """

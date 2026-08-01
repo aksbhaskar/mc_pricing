@@ -1,4 +1,4 @@
-# mc_pricing — Monte Carlo Option Pricing Engine
+# mc_pricing: Monte Carlo Option Pricing Engine
 
 [![CI](https://github.com/aksbhaskar/mc_pricing/actions/workflows/ci.yml/badge.svg)](https://github.com/aksbhaskar/mc_pricing/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -6,7 +6,7 @@
 [![Code style: type-hinted](https://img.shields.io/badge/typed-100%25-brightgreen.svg)](#)
 
 A compact, well-tested quantitative library for pricing **vanilla European
-options** under the **Black–Scholes–Merton** model by Monte Carlo simulation —
+options** under the **Black–Scholes–Merton** model by Monte Carlo simulation,
 with the closed-form solution used as ground truth, two variance-reduction
 techniques, confidence intervals on every estimate, Monte Carlo Greeks, and an
 implied-volatility solver.
@@ -21,14 +21,14 @@ error bars.
 ## Highlights
 
 - **Analytical Black–Scholes–Merton** pricing and all five Greeks (Delta, Gamma,
-  Vega, Theta, Rho), with continuous dividend yield — the validation baseline.
-- **Exact GBM terminal sampling** — no path discretisation for European
+  Vega, Theta, Rho), with continuous dividend yield, the validation baseline.
+- **Exact GBM terminal sampling**: no path discretisation for European
   payoffs, so the estimator is *bias-free* (no time-stepping error), only
   Monte Carlo noise.
 - **Variance reduction**: antithetic variates and a terminal-price control
   variate, combining for a **>20× variance-reduction ratio** on an ATM call.
 - **Confidence intervals** (CLT standard error) reported on *every* Monte Carlo
-  number — prices and Greeks alike.
+  number, prices and Greeks alike.
 - **Monte Carlo Greeks**: unbiased **pathwise** estimators for Delta and Vega;
   **common-random-number finite differences** for Gamma, Theta, and Rho.
 - **Implied volatility** via Brent's method with no-arbitrage guards.
@@ -101,7 +101,7 @@ which the test suite checks independently.
 
 For a European payoff the value depends **only on the terminal price** $S_T$,
 never on the path in between. We therefore sample $S_T$ *exactly* from its
-log-normal law rather than discretising the SDE — this eliminates
+log-normal law rather than discretising the SDE. This eliminates
 time-stepping bias entirely, leaving only statistical error. The estimator is
 
 $$
@@ -120,7 +120,7 @@ $$
 $$
 
 with $s$ the sample standard deviation of the discounted payoffs. Error decays
-as $O(N^{-1/2})$ — the characteristic slow Monte Carlo convergence that
+as $O(N^{-1/2})$, the characteristic slow Monte Carlo convergence that
 variance reduction attacks.
 
 ---
@@ -138,9 +138,9 @@ Since the payoff is a monotone function of $Z$, the pair is negatively
 correlated, and
 
 $$
-\operatorname{Var}\!\Big[\tfrac12\big(Y(Z) + Y(-Z)\big)\Big]
-= \tfrac12\operatorname{Var}[Y]\,(1 + \rho) \le \tfrac12\operatorname{Var}[Y],
-\qquad \rho = \operatorname{Corr}\big(Y(Z), Y(-Z)\big) < 0.
+\text{Var}\!\Big[\tfrac12\big(Y(Z) + Y(-Z)\big)\Big]
+= \tfrac12\text{Var}[Y]\,(1 + \rho) \le \tfrac12\text{Var}[Y],
+\qquad \rho = \text{Corr}\big(Y(Z), Y(-Z)\big) < 0.
 $$
 
 ### Control variates
@@ -161,9 +161,9 @@ $$
 is unbiased for any $b$, and the variance-minimising coefficient is
 
 $$
-b^\star = \frac{\operatorname{Cov}(Y, X)}{\operatorname{Var}(X)},
+b^\star = \frac{\text{Cov}(Y, X)}{\text{Var}(X)},
 \qquad
-\operatorname{Var}[Y^\star] = \operatorname{Var}[Y]\,\big(1 - \rho_{YX}^2\big).
+\text{Var}[Y^\star] = \text{Var}[Y]\,\big(1 - \rho_{YX}^2\big).
 $$
 
 The two techniques compose, and together deliver the largest gains (see the
@@ -203,7 +203,7 @@ tune.
 a *second* derivative (the pathwise first derivative is a non-differentiable
 indicator), and Theta/Rho are conventionally re-priced. We bump-and-reprice
 using the **same** normals for the bumped and base valuations, so the random
-part cancels in the difference — turning an $O(h^{-2})$-variance estimator into
+part cancels in the difference, turning an $O(h^{-2})$-variance estimator into
 an $O(1)$ one. Central differences give $O(h^2)$ bias:
 
 $$
@@ -225,7 +225,7 @@ ATM 1-year call ($S_0=K=100$, $r=5\%$, $q=2\%$, $\sigma=20\%$).
 
 RMS pricing error vs. path count, averaged over 40 independent seeds. Every
 method tracks the theoretical $O(N^{-1/2})$ slope; variance reduction shifts the
-whole curve **down** — the combined estimator (red) reaches at 10k paths an
+whole curve **down**: the combined estimator (red) reaches at 10k paths an
 accuracy plain MC needs ~200k paths for.
 
 ![Convergence](benchmarks/convergence.png)
@@ -236,14 +236,14 @@ At **500,000 paths** (seed 0):
 
 | Method | Price | Abs. error | Std. error | Variance-reduction ratio | Time |
 |--------|------:|-----------:|-----------:|-------------------------:|-----:|
-| Analytic (Black–Scholes) | 9.227006 | — | — | — | — |
+| Analytic (Black–Scholes) | 9.227006 |  |  |  |  |
 | Plain Monte Carlo | 9.25983 | 3.3e-02 | 1.96e-02 | 1.0× | 30 ms |
 | Antithetic | 9.23958 | 1.3e-02 | 1.46e-02 | 1.8× | 28 ms |
 | Control variate | 9.23554 | 8.5e-03 | 8.04e-03 | 5.9× | 52 ms |
 | **Antithetic + control** | **9.23004** | **3.0e-03** | **4.04e-03** | **23.5×** | 37 ms |
 
 A 23× variance reduction means plain Monte Carlo would need **~23× more paths**
-to match the combined estimator's accuracy — at essentially the same per-path
+to match the combined estimator's accuracy, at essentially the same per-path
 cost.
 
 ![Variance reduction](benchmarks/variance_reduction.png)
@@ -286,7 +286,7 @@ print(res.std_error)                        # 3.66e-03
 print(res.variance_reduction_ratio)         # 22.6  (vs. plain MC, same paths)
 ```
 
-### Greeks — closed form vs. Monte Carlo
+### Greeks: closed form vs. Monte Carlo
 
 ```python
 from mc_pricing import black_scholes as bs, monte_carlo_greeks
@@ -351,17 +351,17 @@ pytest
 The suite validates the simulation against the analytics rather than against
 magic numbers:
 
-- **Convergence** — the analytic price lies inside the MC confidence interval,
+- **Convergence**: the analytic price lies inside the MC confidence interval,
   for every variance-reduction configuration and market regime (ATM/ITM/OTM,
   short-dated/high-vol).
-- **Error scaling** — standard error roughly halves when paths quadruple.
-- **Put–call parity** — holds for both the closed-form and MC estimators.
-- **Variance reduction** — antithetic and control variates each *provably reduce*
+- **Error scaling**: standard error roughly halves when paths quadruple.
+- **Put–call parity**: holds for both the closed-form and MC estimators.
+- **Variance reduction**: antithetic and control variates each *provably reduce*
   the standard error, and the combined method beats either alone.
-- **Greek agreement** — pathwise and finite-difference MC Greeks match
+- **Greek agreement**: pathwise and finite-difference MC Greeks match
   Black–Scholes within their standard errors; closed-form Greeks match
   high-accuracy finite differences of the price.
-- **Edge cases** — zero-volatility limit, deep ITM/OTM, parameter validation,
+- **Edge cases**: zero-volatility limit, deep ITM/OTM, parameter validation,
   odd path counts, arbitrage bounds on the IV solver.
 
 ---
@@ -369,7 +369,7 @@ magic numbers:
 ## Notes & limitations
 
 - Scope is deliberately **vanilla European** options under **constant**
-  volatility and rates — the cleanest setting in which to demonstrate the
+  volatility and rates, the cleanest setting in which to demonstrate the
   methodology end-to-end. Path-dependent payoffs, American exercise, and
   stochastic-vol models are natural extensions the layered design leaves room
   for.

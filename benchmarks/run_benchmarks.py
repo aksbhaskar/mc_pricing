@@ -2,10 +2,10 @@
 
 Running this script (``python benchmarks/run_benchmarks.py``) produces:
 
-1. ``convergence.png`` — log-log plot of absolute pricing error against the
+1. ``convergence.png``: log-log plot of absolute pricing error against the
    number of paths for plain MC, antithetic, control variate, and the combined
    estimator, overlaid with the theoretical :math:`O(N^{-1/2})` reference line.
-2. ``variance_reduction.png`` — the variance-reduction ratio achieved by each
+2. ``variance_reduction.png``: the variance-reduction ratio achieved by each
    technique.
 3. A console table of prices, standard errors, and wall-clock timings.
 

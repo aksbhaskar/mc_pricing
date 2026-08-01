@@ -2,7 +2,7 @@ r"""The Monte Carlo simulation engine: exact GBM terminal sampling.
 
 For a *European* payoff the option value depends only on the terminal price
 :math:`S_T`, never on the path in between. There is therefore no need for
-Euler/Milstein path discretisation — we sample :math:`S_T` **exactly** from its
+Euler/Milstein path discretisation. We sample :math:`S_T` **exactly** from its
 known log-normal law,
 
 .. math::
@@ -104,7 +104,7 @@ def simulate_terminal(
 
     Applies the exact log-normal solution of the GBM SDE to a set of
     standard-normal shocks. Supplying ``normals`` lets a caller reuse an
-    existing set of draws — the basis of *common random numbers*, essential for
+    existing set of draws, the basis of *common random numbers*, essential for
     low-variance finite-difference Greeks where the bumped and un-bumped prices
     must share the same randomness.
 
