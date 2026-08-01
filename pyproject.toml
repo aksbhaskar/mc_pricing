@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mc_pricing"
+version = "0.1.0"
+description = "A Monte Carlo option-pricing engine for vanilla European options under Black-Scholes-Merton."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Akshat Bhaskar" }]
+keywords = [
+    "monte-carlo",
+    "option-pricing",
+    "black-scholes",
+    "quantitative-finance",
+    "derivatives",
+    "greeks",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "matplotlib>=3.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/aksbhaskar/mc_pricing"
+Repository = "https://github.com/aksbhaskar/mc_pricing"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+filterwarnings = ["error::RuntimeWarning"]

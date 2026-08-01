@@ -1,0 +1,7 @@
+# Runtime dependencies
+numpy>=1.23
+scipy>=1.9
+
+# Development / benchmarks (install with: pip install -r requirements.txt)
+pytest>=7.0
+matplotlib>=3.5
