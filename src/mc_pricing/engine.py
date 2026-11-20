@@ -88,8 +88,9 @@ def draw_normals(
         return rng.standard_normal(n_paths)
 
     half = (n_paths + 1) // 2
-    base = rng.standard_normal(half)
-    z = np.concatenate([base, -base])
+    z = np.empty(2 * half)
+    rng.standard_normal(out=z[:half])
+    np.negative(z[:half], out=z[half:])
     return z[:n_paths]
 
 
@@ -133,7 +134,11 @@ def simulate_terminal(
         z = np.asarray(normals, dtype=np.float64).ravel()
 
     drift = (spec.rate - spec.dividend_yield - 0.5 * spec.volatility**2) * spec.maturity
-    diffusion = spec.volatility * np.sqrt(spec.maturity) * z
-    terminal = spec.spot * np.exp(drift + diffusion)
+    # One output buffer for diffusion, drift, exp and spot scaling; ``z`` itself
+    # is never overwritten because pathwise Vega needs the original normals.
+    terminal = np.multiply(spec.volatility * np.sqrt(spec.maturity), z)
+    terminal += drift
+    np.exp(terminal, out=terminal)
+    terminal *= spec.spot
 
     return TerminalSample(terminal_prices=terminal, normals=z, antithetic=antithetic)

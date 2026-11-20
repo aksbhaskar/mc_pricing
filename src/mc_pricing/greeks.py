@@ -54,6 +54,7 @@ from numpy.typing import NDArray
 
 from .engine import draw_normals, simulate_terminal
 from .option import OptionSpec
+from .payoff import terminal_payoff
 from .stats import MCResult, summarize
 
 
@@ -80,6 +81,20 @@ class GreekEstimate:
         return cls(value=result.estimate, std_error=result.std_error, method=method)
 
 
+def _discounted_payoff(
+    spec: OptionSpec, terminal_prices: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Discounted payoff of ``spec`` on each of the given terminal prices."""
+    payoff = terminal_payoff(spec, terminal_prices)
+    payoff *= np.exp(-spec.rate * spec.maturity)
+    return payoff
+
+
+def _terminal(spec: OptionSpec, z: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Terminal prices of ``spec`` driven by the shared normals ``z``."""
+    return simulate_terminal(spec, z.size, rng=None, normals=z).terminal_prices  # type: ignore[arg-type]
+
+
 def _discounted_payoff_per_path(
     spec: OptionSpec, z: NDArray[np.float64]
 ) -> NDArray[np.float64]:
@@ -89,11 +104,80 @@ def _discounted_payoff_per_path(
     every bumped valuation calls it with the *same* ``z`` so the stochastic
     part cancels in the differences.
     """
-    from .payoff import terminal_payoff  # local import avoids a cycle
+    return _discounted_payoff(spec, _terminal(spec, z))
 
-    sample = simulate_terminal(spec, z.size, rng=None, normals=z)  # type: ignore[arg-type]
+
+def _delta_per_path(spec: OptionSpec, S_T: NDArray[np.float64]) -> NDArray[np.float64]:
+    w = spec.option_type.sign
+    in_money = (w * (S_T - spec.strike)) > 0.0
     discount = np.exp(-spec.rate * spec.maturity)
-    return discount * terminal_payoff(spec, sample.terminal_prices)
+    return discount * w * (S_T / spec.spot) * in_money
+
+
+def _vega_per_path(
+    spec: OptionSpec, S_T: NDArray[np.float64], z: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    w = spec.option_type.sign
+    in_money = (w * (S_T - spec.strike)) > 0.0
+    sqrt_t = np.sqrt(spec.maturity)
+    dS_dsigma = S_T * (sqrt_t * z - spec.volatility * spec.maturity)
+    discount = np.exp(-spec.rate * spec.maturity)
+    return discount * w * dS_dsigma * in_money
+
+
+def _gamma_per_path(
+    spec: OptionSpec, S_T: NDArray[np.float64], rel_bump: float
+) -> NDArray[np.float64]:
+    # S_T is linear in S_0 for fixed Z, so the bumped terminal prices are the
+    # base ones rescaled: no further exponentials needed.
+    h = spec.spot * rel_bump
+    p0 = _discounted_payoff(spec, S_T)
+    p_up = _discounted_payoff(spec.with_spot(spec.spot + h), S_T * ((spec.spot + h) / spec.spot))
+    p_dn = _discounted_payoff(spec.with_spot(spec.spot - h), S_T * ((spec.spot - h) / spec.spot))
+    return (p_up - 2.0 * p0 + p_dn) / (h * h)
+
+
+def _theta_per_path(
+    spec: OptionSpec, z: NDArray[np.float64], rel_bump: float
+) -> NDArray[np.float64]:
+    h = spec.maturity * rel_bump
+    p_up = _discounted_payoff_per_path(spec.with_maturity(spec.maturity + h), z)
+    p_dn = _discounted_payoff_per_path(spec.with_maturity(spec.maturity - h), z)
+    # theta = -dV/dT
+    return -(p_up - p_dn) / (2.0 * h)
+
+
+def _rho_per_path(
+    spec: OptionSpec, S_T: NDArray[np.float64], abs_bump: float
+) -> NDArray[np.float64]:
+    # A rate bump of h scales every S_T by exp(±hT) for fixed Z; the discount
+    # factor change is picked up by pricing under the bumped spec.
+    h = abs_bump
+    growth = np.exp(h * spec.maturity)
+    p_up = _discounted_payoff(spec.with_rate(spec.rate + h), S_T * growth)
+    p_dn = _discounted_payoff(spec.with_rate(spec.rate - h), S_T / growth)
+    return (p_up - p_dn) / (2.0 * h)
+
+
+def _crn_estimate(est: NDArray[np.float64], confidence: float) -> GreekEstimate:
+    return GreekEstimate.from_result(summarize(est, confidence), "finite-difference-crn")
+
+
+def _pathwise_estimate(est: NDArray[np.float64], confidence: float) -> GreekEstimate:
+    return GreekEstimate.from_result(summarize(est, confidence), "pathwise")
+
+
+def _normals(
+    n_paths: int,
+    antithetic: bool,
+    seed: int | None,
+    rng: np.random.Generator | None,
+) -> NDArray[np.float64]:
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    if antithetic:
+        n_paths += n_paths % 2
+    return draw_normals(n_paths, rng, antithetic=antithetic)
 
 
 def pathwise_delta(
@@ -110,17 +194,8 @@ def pathwise_delta(
     Per-path estimator
     :math:`e^{-rT}\,\omega\,(S_T/S_0)\,\mathbf{1}\{\omega(S_T-K)>0\}`.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
-    if antithetic:
-        n_paths += n_paths % 2
-    sample = simulate_terminal(spec, n_paths, rng, antithetic=antithetic)
-    S_T = sample.terminal_prices
-    w = spec.option_type.sign
-    in_money = (w * (S_T - spec.strike)) > 0.0
-    discount = np.exp(-spec.rate * spec.maturity)
-    est = discount * w * (S_T / spec.spot) * in_money
-    return GreekEstimate.from_result(summarize(est, confidence), "pathwise")
+    z = _normals(n_paths, antithetic, seed, rng)
+    return _pathwise_estimate(_delta_per_path(spec, _terminal(spec, z)), confidence)
 
 
 def pathwise_vega(
@@ -138,20 +213,8 @@ def pathwise_vega(
     :math:`e^{-rT}\,\omega\,S_T(\sqrt T\,Z - \sigma T)\,
     \mathbf{1}\{\omega(S_T-K)>0\}`, using the stored driving normals :math:`Z`.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
-    if antithetic:
-        n_paths += n_paths % 2
-    sample = simulate_terminal(spec, n_paths, rng, antithetic=antithetic)
-    S_T = sample.terminal_prices
-    z = sample.normals
-    w = spec.option_type.sign
-    in_money = (w * (S_T - spec.strike)) > 0.0
-    sqrt_t = np.sqrt(spec.maturity)
-    dS_dsigma = S_T * (sqrt_t * z - spec.volatility * spec.maturity)
-    discount = np.exp(-spec.rate * spec.maturity)
-    est = discount * w * dS_dsigma * in_money
-    return GreekEstimate.from_result(summarize(est, confidence), "pathwise")
+    z = _normals(n_paths, antithetic, seed, rng)
+    return _pathwise_estimate(_vega_per_path(spec, _terminal(spec, z), z), confidence)
 
 
 def fd_gamma(
@@ -168,22 +231,11 @@ def fd_gamma(
 
     Per-path estimator :math:`(P_+ - 2P_0 + P_-)/h^2` where the three prices
     share the same normals. ``rel_bump`` sets :math:`h = \text{rel\_bump}\times
-    S_0`.
+    S_0`. Because :math:`S_T` is proportional to :math:`S_0` for fixed
+    :math:`Z`, the bumped terminal prices are rescaled base prices.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
-    if antithetic:
-        n_paths += n_paths % 2
-    z = draw_normals(n_paths, rng, antithetic=antithetic)
-    h = spec.spot * rel_bump
-
-    p0 = _discounted_payoff_per_path(spec, z)
-    p_up = _discounted_payoff_per_path(spec.with_spot(spec.spot + h), z)
-    p_dn = _discounted_payoff_per_path(spec.with_spot(spec.spot - h), z)
-    est = (p_up - 2.0 * p0 + p_dn) / (h * h)
-    return GreekEstimate.from_result(
-        summarize(est, confidence), "finite-difference-crn"
-    )
+    z = _normals(n_paths, antithetic, seed, rng)
+    return _crn_estimate(_gamma_per_path(spec, _terminal(spec, z), rel_bump), confidence)
 
 
 def fd_theta(
@@ -202,20 +254,8 @@ def fd_theta(
     the maturity difference is negated. ``rel_bump`` sets
     :math:`h_T = \text{rel\_bump}\times T`.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
-    if antithetic:
-        n_paths += n_paths % 2
-    z = draw_normals(n_paths, rng, antithetic=antithetic)
-    h = spec.maturity * rel_bump
-
-    p_up = _discounted_payoff_per_path(spec.with_maturity(spec.maturity + h), z)
-    p_dn = _discounted_payoff_per_path(spec.with_maturity(spec.maturity - h), z)
-    # theta = -dV/dT
-    est = -(p_up - p_dn) / (2.0 * h)
-    return GreekEstimate.from_result(
-        summarize(est, confidence), "finite-difference-crn"
-    )
+    z = _normals(n_paths, antithetic, seed, rng)
+    return _crn_estimate(_theta_per_path(spec, z, rel_bump), confidence)
 
 
 def fd_rho(
@@ -231,22 +271,11 @@ def fd_rho(
     r"""Estimate Rho by a central finite difference in the rate with CRN.
 
     Per-path estimator :math:`(P_{r+h} - P_{r-h})/(2h)`; bumping :math:`r`
-    shifts both the risk-neutral drift and the discount factor, both handled by
-    re-pricing on the shared normals.
+    shifts both the risk-neutral drift (a factor :math:`e^{\pm hT}` on each
+    :math:`S_T`) and the discount factor, both applied on the shared normals.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
-    if antithetic:
-        n_paths += n_paths % 2
-    z = draw_normals(n_paths, rng, antithetic=antithetic)
-    h = abs_bump
-
-    p_up = _discounted_payoff_per_path(spec.with_rate(spec.rate + h), z)
-    p_dn = _discounted_payoff_per_path(spec.with_rate(spec.rate - h), z)
-    est = (p_up - p_dn) / (2.0 * h)
-    return GreekEstimate.from_result(
-        summarize(est, confidence), "finite-difference-crn"
-    )
+    z = _normals(n_paths, antithetic, seed, rng)
+    return _crn_estimate(_rho_per_path(spec, _terminal(spec, z), abs_bump), confidence)
 
 
 def monte_carlo_greeks(
@@ -256,19 +285,43 @@ def monte_carlo_greeks(
     antithetic: bool = True,
     confidence: float = 0.95,
     seed: int | None = None,
+    shared_paths: bool = False,
 ) -> dict[str, GreekEstimate]:
     """Estimate all five Greeks by Monte Carlo in one call.
 
     Delta and Vega use pathwise estimators; Gamma, Theta and Rho use
     common-random-number central finite differences. A shared ``seed`` is
-    threaded through so results are reproducible, but each Greek draws its own
-    independent normals.
+    threaded through so results are reproducible.
+
+    Parameters
+    ----------
+    shared_paths:
+        ``False`` (default): each Greek draws its own independent normals, so
+        the five estimates are statistically independent. ``True``: all five
+        are computed from one set of normals and one set of base terminal
+        prices (spot and rate bumps are rescalings of them; only Theta's
+        maturity bumps need new exponentials). This does roughly a fifth of
+        the random draws and a third of the exponentials, so it is markedly
+        faster, but the estimates become correlated with each other and the
+        seeded values differ from the default mode. Each Greek on its own is
+        exactly as accurate as in the default mode.
 
     Returns
     -------
     dict[str, GreekEstimate]
         Keys ``delta``, ``gamma``, ``vega``, ``theta``, ``rho``.
     """
+    if shared_paths:
+        z = _normals(n_paths, antithetic, seed, None)
+        S_T = _terminal(spec, z)
+        return {
+            "delta": _pathwise_estimate(_delta_per_path(spec, S_T), confidence),
+            "gamma": _crn_estimate(_gamma_per_path(spec, S_T, 1e-2), confidence),
+            "vega": _pathwise_estimate(_vega_per_path(spec, S_T, z), confidence),
+            "theta": _crn_estimate(_theta_per_path(spec, z, 1e-3), confidence),
+            "rho": _crn_estimate(_rho_per_path(spec, S_T, 1e-4), confidence),
+        }
+
     ss = np.random.SeedSequence(seed)
     streams = [np.random.default_rng(s) for s in ss.spawn(5)]
     return {

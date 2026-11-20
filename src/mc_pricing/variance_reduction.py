@@ -51,6 +51,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .option import OptionSpec
+from .stats import CentredMoments
 
 
 def collapse_antithetic(values: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -115,11 +116,42 @@ def apply_control_variate(
     """
     y = np.asarray(discounted_payoffs, dtype=np.float64)
     x = np.asarray(controls, dtype=np.float64)
-    var_x = float(x.var(ddof=1))
+    n = x.size
+    xc = x - x.mean()
+    m2_xx = float(np.dot(xc, xc))
+    var_x = m2_xx / (n - 1) if n > 1 else 0.0
     if var_x < 1e-30:
         # Degenerate control (e.g. sigma = 0 → constant S_T): no adjustment.
         return ControlVariateResult(adjusted=y.copy(), beta=0.0)
-    cov = float(np.cov(y, x, ddof=1)[0, 1])
-    beta = cov / var_x
+    beta = float(np.dot(y - y.mean(), xc)) / m2_xx
     adjusted = y - beta * (x - control_mean)
     return ControlVariateResult(adjusted=adjusted, beta=beta)
+
+
+def control_variate_moments(
+    moments: CentredMoments, control_mean: float
+) -> tuple[float, float, float]:
+    r"""Controlled estimator statistics straight from the sample moments.
+
+    Equivalent to :func:`apply_control_variate` followed by summarising the
+    adjusted samples, but without materialising them: with
+    :math:`b^\star = M_{xy}/M_{xx}`,
+
+    .. math::
+
+        \bar Y^\star = \bar Y - b^\star(\bar X - \mathbb{E}[X]),\qquad
+        M^\star_2 = M_{yy} - 2b^\star M_{xy} + (b^\star)^2 M_{xx}.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        ``(mean, m2, beta)`` of the controlled per-sample estimator.
+    """
+    n = moments.n
+    var_x = moments.m2_xx / (n - 1) if n > 1 else 0.0
+    if var_x < 1e-30:
+        return moments.mean_y, moments.m2_yy, 0.0
+    beta = moments.m2_xy / moments.m2_xx
+    mean = moments.mean_y - beta * (moments.mean_x - control_mean)
+    m2 = moments.m2_yy - 2.0 * beta * moments.m2_xy + beta * beta * moments.m2_xx
+    return mean, max(m2, 0.0), beta

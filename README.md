@@ -32,7 +32,7 @@ error bars.
 - **Monte Carlo Greeks**: unbiased **pathwise** estimators for Delta and Vega;
   **common-random-number finite differences** for Gamma, Theta, and Rho.
 - **Implied volatility** via Brent's method with no-arbitrage guards.
-- **127 tests**, a convergence/timing benchmark suite with plots, and CI across
+- **161 tests**, a convergence/timing benchmark suite with plots, and CI across
   Linux/macOS/Windows and Python 3.10–3.12.
 
 ---
@@ -244,7 +244,9 @@ At **500,000 paths** (seed 0):
 
 A 23× variance reduction means plain Monte Carlo would need **~23× more paths**
 to match the combined estimator's accuracy, at essentially the same per-path
-cost.
+cost. The benchmark script also prints the paths and time each method needs
+to reach the *same* standard error via `monte_carlo_price_to_accuracy`, which
+is where that reduction turns into wall-clock speed.
 
 ![Variance reduction](benchmarks/variance_reduction.png)
 
@@ -286,6 +288,21 @@ print(res.std_error)                        # 3.66e-03
 print(res.variance_reduction_ratio)         # 22.6  (vs. plain MC, same paths)
 ```
 
+### Pricing to a target accuracy
+
+```python
+from mc_pricing import monte_carlo_price_to_accuracy
+
+res = monte_carlo_price_to_accuracy(spec, target_std_error=2e-3, seed=0)
+print(res.n_paths_simulated, res.std_error) # ~1.6M paths for a 2e-3 SE
+```
+
+A pilot run (antithetic + control variate by default) estimates the variance,
+then a fresh, independent run of the size needed for the target standard error
+is priced and returned. Plain Monte Carlo needs roughly 23× more paths for the
+same target on this call. Pass `chunk_size=` to `monte_carlo_price` (this
+function chunks at 1M paths by default) to bound memory on very large runs.
+
 ### Greeks: closed form vs. Monte Carlo
 
 ```python
@@ -296,6 +313,9 @@ mc = monte_carlo_greeks(spec, n_paths=500_000, seed=1)
 
 print(mc["delta"].value, mc["delta"].std_error, mc["delta"].method)
 # 0.49221 8.23e-04 pathwise
+
+# ~1.7x faster: all five Greeks from one set of draws (estimates become correlated)
+mc_fast = monte_carlo_greeks(spec, n_paths=500_000, seed=1, shared_paths=True)
 ```
 
 ### Implied volatility

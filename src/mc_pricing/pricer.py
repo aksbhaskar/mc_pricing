@@ -17,6 +17,8 @@ relative to plain Monte Carlo on the *same* random draws.
 
 from __future__ import annotations
 
+import math
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,7 +27,7 @@ from . import variance_reduction as vr
 from .engine import simulate_terminal
 from .option import OptionSpec
 from .payoff import terminal_payoff
-from .stats import MCResult, summarize
+from .stats import CentredMoments, MCResult, summarize_moments
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +88,7 @@ def monte_carlo_price(
     confidence: float = 0.95,
     seed: int | None = None,
     rng: np.random.Generator | None = None,
+    chunk_size: int | None = None,
 ) -> PricingResult:
     r"""Price a European option by Monte Carlo simulation.
 
@@ -108,6 +111,12 @@ def monte_carlo_price(
     rng:
         An explicit NumPy generator (takes precedence over ``seed``); inject
         this to share a random stream across calls.
+    chunk_size:
+        If given, simulate at most this many paths at a time (rounded up to an
+        even count with ``antithetic=True`` so pairs never straddle chunks) and
+        merge their centred moments, bounding memory to ``O(chunk_size)``. The
+        random stream and the estimator are unchanged; results agree with the
+        unchunked run up to floating-point rounding.
 
     Returns
     -------
@@ -121,6 +130,10 @@ def monte_carlo_price(
     control-adjusted) but its expectation is unchanged, so the price stays
     unbiased while the confidence interval tightens.
     """
+    if n_paths <= 0:
+        raise ValueError(f"n_paths must be positive, got {n_paths}")
+    if chunk_size is not None and chunk_size <= 0:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     if rng is None:
         rng = np.random.default_rng(seed)
 
@@ -132,39 +145,54 @@ def monte_carlo_price(
     else:
         n_eff = n_paths
 
-    sample = simulate_terminal(spec, n_eff, rng, antithetic=antithetic)
-    terminal = sample.terminal_prices
-    disc_payoffs = discount * terminal_payoff(spec, terminal)
+    chunk = n_eff if chunk_size is None else chunk_size
+    if antithetic:
+        chunk += chunk % 2
 
-    # Plain (no variance reduction) baseline on the *same* paths, for an
-    # honest reduction ratio. This is just the mean of the discounted payoffs.
-    plain = summarize(disc_payoffs, confidence=confidence)
-    plain_mean_var = plain.std_error**2  # SE² of plain estimator
+    # ``est`` holds the moments of the per-sample estimator (paired when
+    # antithetic) and, with a control variate, of the matching controls.
+    # ``plain`` holds the moments of the raw discounted payoffs on the *same*
+    # paths, for an honest reduction ratio; without antithetic pairing it is
+    # the same sample as ``est``.
+    est: CentredMoments | None = None
+    plain: CentredMoments | None = None
+    remaining = n_eff
+    while remaining > 0:
+        m = min(chunk, remaining)
+        remaining -= m
+        terminal = simulate_terminal(spec, m, rng, antithetic=antithetic).terminal_prices
+        disc_payoffs = terminal_payoff(spec, terminal)
+        disc_payoffs *= discount
+        if antithetic:
+            # Collapse pairs first, then (optionally) control on the pairs.
+            batch_plain = CentredMoments.from_arrays(disc_payoffs)
+            plain = batch_plain if plain is None else plain.merge(batch_plain)
+            batch = CentredMoments.from_arrays(
+                vr.collapse_antithetic(disc_payoffs),
+                vr.collapse_antithetic(terminal) if control_variate else None,
+            )
+        else:
+            batch = CentredMoments.from_arrays(
+                disc_payoffs, terminal if control_variate else None
+            )
+        est = batch if est is None else est.merge(batch)
 
-    # Build the per-sample estimator for the requested technique(s).
+    assert est is not None
+    if plain is None:
+        plain = est
+
+    plain_result = summarize_moments(plain.n, plain.mean_y, plain.m2_yy, confidence)
+
     beta = 0.0
-    if antithetic and control_variate:
-        # Collapse pairs first, then control on the paired estimators.
-        paired_payoffs = vr.collapse_antithetic(disc_payoffs)
-        paired_controls = vr.collapse_antithetic(terminal)
-        cv = vr.apply_control_variate(
-            paired_payoffs, paired_controls, vr.expected_terminal(spec)
-        )
-        per_sample = cv.adjusted
-        beta = cv.beta
+    if control_variate:
+        mean, m2, beta = vr.control_variate_moments(est, vr.expected_terminal(spec))
+        result = summarize_moments(est.n, mean, m2, confidence)
     elif antithetic:
-        per_sample = vr.collapse_antithetic(disc_payoffs)
-    elif control_variate:
-        cv = vr.apply_control_variate(
-            disc_payoffs, terminal, vr.expected_terminal(spec)
-        )
-        per_sample = cv.adjusted
-        beta = cv.beta
+        result = summarize_moments(est.n, est.mean_y, est.m2_yy, confidence)
     else:
-        per_sample = disc_payoffs
+        result = plain_result
 
-    result = summarize(per_sample, confidence=confidence)
-
+    plain_mean_var = plain_result.std_error**2  # SE² of plain estimator
     reduced_mean_var = result.std_error**2
     if reduced_mean_var > 0.0:
         ratio = plain_mean_var / reduced_mean_var
@@ -177,5 +205,101 @@ def monte_carlo_price(
         control_variate=control_variate,
         variance_reduction_ratio=ratio,
         control_beta=beta,
-        n_paths_simulated=int(terminal.size),
+        n_paths_simulated=int(n_eff),
+    )
+
+
+def monte_carlo_price_to_accuracy(
+    spec: OptionSpec,
+    target_std_error: float,
+    *,
+    antithetic: bool = True,
+    control_variate: bool = True,
+    pilot_paths: int = 20_000,
+    max_paths: int = 50_000_000,
+    confidence: float = 0.95,
+    chunk_size: int | None = 1_000_000,
+    seed: int | None = None,
+    rng: np.random.Generator | None = None,
+) -> PricingResult:
+    r"""Price to a target standard error, sizing the run from a pilot.
+
+    Variance reduction buys accuracy, not speed, at a fixed path count; this
+    entry point turns that into speed. A pilot run of ``pilot_paths`` estimates
+    the per-sample standard deviation :math:`s` of the chosen estimator (by
+    default antithetic + control variate), the number of samples needed for
+    :math:`s/\sqrt n \le` ``target_std_error`` is computed, and a **fresh,
+    independent** final run of that size is priced and returned. The pilot is
+    discarded, so the final estimate, its interval and its fitted control
+    coefficient are not conditioned on the sizing step.
+
+    Parameters
+    ----------
+    spec:
+        The option and market specification.
+    target_std_error:
+        Desired standard error of the final price estimate.
+    antithetic, control_variate:
+        Estimator to use for both the pilot and the final run. Pass ``False``
+        for both to size a plain Monte Carlo run for comparison.
+    pilot_paths:
+        Paths in the pilot run used only to estimate the variance.
+    max_paths:
+        Upper bound on the final run's paths; a :class:`UserWarning` is issued
+        and the bound used if the target would need more.
+    confidence:
+        Confidence level for the reported interval.
+    chunk_size:
+        Passed to :func:`monte_carlo_price` for the final run to bound memory.
+    seed, rng:
+        As for :func:`monte_carlo_price`. The pilot and the final run consume
+        consecutive, non-overlapping draws from the same generator.
+
+    Returns
+    -------
+    PricingResult
+        The final run's result. Its standard error is close to, but being
+        itself an estimate not guaranteed below, ``target_std_error``.
+        ``n_paths_simulated`` excludes the pilot's paths.
+    """
+    if not target_std_error > 0.0:
+        raise ValueError(f"target_std_error must be positive, got {target_std_error}")
+    paths_per_sample = 2 if antithetic else 1
+    # Antithetic runs round odd counts up, so an odd cap would be overshot.
+    max_paths -= max_paths % paths_per_sample
+    if max_paths < 2 * paths_per_sample:
+        raise ValueError(f"max_paths must allow at least two samples, got {max_paths}")
+    if rng is None:
+        rng = np.random.default_rng(seed)
+
+    pilot = monte_carlo_price(
+        spec,
+        pilot_paths,
+        antithetic=antithetic,
+        control_variate=control_variate,
+        confidence=confidence,
+        rng=rng,
+    )
+    n_samples = math.ceil((pilot.result.sample_std / target_std_error) ** 2)
+    # Never run smaller than the pilot: a pilot that saw no payoff (deep OTM)
+    # or a loose target would otherwise size a tiny final run whose own
+    # variance estimate (and in-sample control fit) is meaningless.
+    n_paths = max(n_samples * paths_per_sample, pilot.n_paths_simulated)
+    if n_paths > max_paths:
+        warnings.warn(
+            f"target_std_error={target_std_error:g} needs ~{n_paths:,} paths; "
+            f"capping at max_paths={max_paths:,}",
+            UserWarning,
+            stacklevel=2,
+        )
+        n_paths = max_paths
+
+    return monte_carlo_price(
+        spec,
+        n_paths,
+        antithetic=antithetic,
+        control_variate=control_variate,
+        confidence=confidence,
+        rng=rng,
+        chunk_size=chunk_size,
     )

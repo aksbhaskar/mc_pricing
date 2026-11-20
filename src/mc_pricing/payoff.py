@@ -21,5 +21,7 @@ def terminal_payoff(
     :math:`\omega = +1` for a call, :math:`-1` for a put. Vectorised over the
     array of terminal prices.
     """
-    w = spec.option_type.sign
-    return np.maximum(w * (terminal_prices - spec.strike), 0.0)
+    payoff = np.subtract(terminal_prices, spec.strike)
+    if spec.option_type.sign < 0:
+        np.negative(payoff, out=payoff)
+    return np.maximum(payoff, 0.0, out=payoff)
