@@ -276,8 +276,11 @@ def monte_carlo_price_to_accuracy(
         rng=rng,
     )
     paths_per_sample = 2 if antithetic else 1
-    n_samples = max(2, math.ceil((pilot.result.sample_std / target_std_error) ** 2))
-    n_paths = n_samples * paths_per_sample
+    n_samples = math.ceil((pilot.result.sample_std / target_std_error) ** 2)
+    # Never run smaller than the pilot: a pilot that saw no payoff (deep OTM)
+    # or a loose target would otherwise size a tiny final run whose own
+    # variance estimate (and in-sample control fit) is meaningless.
+    n_paths = max(n_samples * paths_per_sample, pilot.n_paths_simulated)
     if n_paths > max_paths:
         warnings.warn(
             f"target_std_error={target_std_error:g} needs ~{n_paths:,} paths; "

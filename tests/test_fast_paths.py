@@ -215,3 +215,12 @@ def test_price_to_accuracy_caps_and_validates(atm_call):
     assert res.n_paths_simulated == 10_000
     with pytest.raises(ValueError):
         monte_carlo_price_to_accuracy(atm_call, 0.0)
+
+
+def test_price_to_accuracy_final_run_never_smaller_than_pilot(atm_call):
+    deep_otm = OptionSpec(100, 1000, 0.1, 0.05, 0.2, OptionType.CALL)
+    res = monte_carlo_price_to_accuracy(deep_otm, 1e-2, pilot_paths=5_000, seed=33)
+    assert res.n_paths_simulated >= 5_000
+    loose = monte_carlo_price_to_accuracy(atm_call, 10.0, pilot_paths=5_000, seed=34)
+    assert loose.n_paths_simulated >= 5_000
+    assert loose.std_error > 1e-3
