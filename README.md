@@ -32,7 +32,7 @@ error bars.
 - **Monte Carlo Greeks**: unbiased **pathwise** estimators for Delta and Vega;
   **common-random-number finite differences** for Gamma, Theta, and Rho.
 - **Implied volatility** via Brent's method with no-arbitrage guards.
-- **160 tests**, a convergence/timing benchmark suite with plots, and CI across
+- **161 tests**, a convergence/timing benchmark suite with plots, and CI across
   Linux/macOS/Windows and Python 3.10–3.12.
 
 ---
