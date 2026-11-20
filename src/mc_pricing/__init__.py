@@ -31,7 +31,7 @@ from . import black_scholes, greeks
 from .greeks import GreekEstimate, monte_carlo_greeks
 from .implied_vol import implied_volatility
 from .option import OptionSpec, OptionType
-from .pricer import PricingResult, monte_carlo_price
+from .pricer import PricingResult, monte_carlo_price, monte_carlo_price_to_accuracy
 from .stats import MCResult, summarize
 
 __all__ = [
@@ -41,6 +41,7 @@ __all__ = [
     "summarize",
     "PricingResult",
     "monte_carlo_price",
+    "monte_carlo_price_to_accuracy",
     "GreekEstimate",
     "monte_carlo_greeks",
     "implied_volatility",

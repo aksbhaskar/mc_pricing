@@ -7,7 +7,9 @@ Running this script (``python benchmarks/run_benchmarks.py``) produces:
    estimator, overlaid with the theoretical :math:`O(N^{-1/2})` reference line.
 2. ``variance_reduction.png``: the variance-reduction ratio achieved by each
    technique.
-3. A console table of prices, standard errors, and wall-clock timings.
+3. A console table of prices, standard errors, and wall-clock timings at a
+   fixed path count, then the paths and time each method needs to reach the
+   same target standard error, and the all-Greeks bundle timing.
 
 The plots are what the README embeds; the console table is a quick sanity
 check that the estimators agree with Black-Scholes.
@@ -20,7 +22,14 @@ from pathlib import Path
 
 import numpy as np
 
-from mc_pricing import OptionSpec, OptionType, black_scholes as bs, monte_carlo_price
+from mc_pricing import (
+    OptionSpec,
+    OptionType,
+    black_scholes as bs,
+    monte_carlo_greeks,
+    monte_carlo_price,
+    monte_carlo_price_to_accuracy,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -83,6 +92,35 @@ def print_summary_table() -> None:
               f"{res.std_error:>12.2e}{res.variance_reduction_ratio:>8.1f}{dt:>12.1f}")
 
 
+def print_target_accuracy_table(target_std_error: float = 5e-3) -> None:
+    """Paths and time each method needs to reach the same standard error.
+
+    Fixed-path-count tables hide the real payoff of variance reduction: at
+    equal accuracy the combined estimator needs far fewer paths, so it is far
+    faster. Each run sizes itself from a pilot and prices on fresh draws.
+    """
+    analytic = bs.price(SPEC)
+    print(f"\nTarget standard error {target_std_error:g} (pilot-sized, independent final run)")
+    print(f"\n{'Method':<20}{'Paths':>12}{'Std err':>12}{'Abs err':>12}{'Time (ms)':>12}")
+    print("-" * 68)
+    for name, kwargs in METHODS.items():
+        t0 = time.perf_counter()
+        res = monte_carlo_price_to_accuracy(SPEC, target_std_error, seed=0, **kwargs)
+        dt = (time.perf_counter() - t0) * 1e3
+        print(f"{name:<20}{res.n_paths_simulated:>12,}{res.std_error:>12.2e}"
+              f"{abs(res.price - analytic):>12.2e}{dt:>12.1f}")
+
+
+def print_greeks_timing(n_paths: int = 400_000) -> None:
+    """Time the all-Greeks bundle with independent and shared paths."""
+    print(f"\nAll five Greeks, {n_paths:,} paths")
+    for label, shared in (("independent paths", False), ("shared_paths=True", True)):
+        monte_carlo_greeks(SPEC, n_paths, seed=0, shared_paths=shared)  # warm-up
+        t0 = time.perf_counter()
+        monte_carlo_greeks(SPEC, n_paths, seed=0, shared_paths=shared)
+        print(f"  {label:<20}{(time.perf_counter() - t0) * 1e3:>10.1f} ms")
+
+
 def make_plots(rms_error: dict[str, list[float]]) -> None:
     import matplotlib
 
@@ -136,6 +174,8 @@ def main() -> None:
     print("Running convergence study...")
     rms_error = run_convergence()
     print_summary_table()
+    print_target_accuracy_table()
+    print_greeks_timing()
     try:
         make_plots(rms_error)
     except ImportError:

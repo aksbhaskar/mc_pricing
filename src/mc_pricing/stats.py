@@ -120,6 +120,86 @@ def summarize(
     )
 
 
+def summarize_moments(
+    n: int, mean: float, m2: float, confidence: float = 0.95
+) -> MCResult:
+    r"""Build an :class:`MCResult` from a sample size, mean and centred sum of
+    squares :math:`M_2 = \sum_i (X_i - \bar X)^2`.
+
+    Gives the same statistics as :func:`summarize` (unbiased ``n - 1``
+    variance) without needing the samples themselves.
+    """
+    if not 0.0 < confidence < 1.0:
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+    if n <= 0:
+        raise ValueError("cannot summarize an empty sample")
+    std = math.sqrt(max(m2, 0.0) / (n - 1)) if n > 1 else 0.0
+    return MCResult(
+        estimate=float(mean),
+        std_error=std / math.sqrt(n),
+        n_samples=int(n),
+        confidence=confidence,
+        sample_std=std,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CentredMoments:
+    r"""Running centred moments of paired samples :math:`(Y_i, X_i)`.
+
+    Holds the count, the two means and the centred sums
+    :math:`M_{yy} = \sum (Y-\bar Y)^2`, :math:`M_{xx}` and
+    :math:`M_{xy} = \sum (Y-\bar Y)(X-\bar X)`. Batches are combined with
+    Chan et al.'s pairwise update, which stays cancellation-resistant (unlike
+    raw sums of squares), so a simulation can be streamed in chunks and still
+    give the variances and covariance of the whole sample. When no ``x`` is
+    supplied the ``x`` fields stay zero.
+    """
+
+    n: int
+    mean_y: float
+    mean_x: float
+    m2_yy: float
+    m2_xx: float
+    m2_xy: float
+
+    @classmethod
+    def from_arrays(
+        cls, y: NDArray[np.float64], x: NDArray[np.float64] | None = None
+    ) -> "CentredMoments":
+        y = np.asarray(y, dtype=np.float64).ravel()
+        n = y.size
+        if n == 0:
+            raise ValueError("cannot take moments of an empty sample")
+        mean_y = float(y.mean())
+        yc = y - mean_y
+        m2_yy = float(np.dot(yc, yc))
+        if x is None:
+            return cls(n, mean_y, 0.0, m2_yy, 0.0, 0.0)
+        x = np.asarray(x, dtype=np.float64).ravel()
+        if x.size != n:
+            raise ValueError("y and x must have the same length")
+        mean_x = float(x.mean())
+        xc = x - mean_x
+        return cls(
+            n, mean_y, mean_x, m2_yy, float(np.dot(xc, xc)), float(np.dot(yc, xc))
+        )
+
+    def merge(self, other: "CentredMoments") -> "CentredMoments":
+        n = self.n + other.n
+        dy = other.mean_y - self.mean_y
+        dx = other.mean_x - self.mean_x
+        w = self.n * other.n / n
+        return CentredMoments(
+            n=n,
+            mean_y=self.mean_y + dy * other.n / n,
+            mean_x=self.mean_x + dx * other.n / n,
+            m2_yy=self.m2_yy + other.m2_yy + dy * dy * w,
+            m2_xx=self.m2_xx + other.m2_xx + dx * dx * w,
+            m2_xy=self.m2_xy + other.m2_xy + dy * dx * w,
+        )
+
+
 def _normal_quantile(p: float) -> float:
     r"""Inverse standard-normal CDF (the probit function) :math:`\Phi^{-1}(p)`.
 
