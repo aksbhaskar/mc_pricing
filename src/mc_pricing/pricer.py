@@ -264,6 +264,11 @@ def monte_carlo_price_to_accuracy(
     """
     if not target_std_error > 0.0:
         raise ValueError(f"target_std_error must be positive, got {target_std_error}")
+    paths_per_sample = 2 if antithetic else 1
+    # Antithetic runs round odd counts up, so an odd cap would be overshot.
+    max_paths -= max_paths % paths_per_sample
+    if max_paths < 2 * paths_per_sample:
+        raise ValueError(f"max_paths must allow at least two samples, got {max_paths}")
     if rng is None:
         rng = np.random.default_rng(seed)
 
@@ -275,7 +280,6 @@ def monte_carlo_price_to_accuracy(
         confidence=confidence,
         rng=rng,
     )
-    paths_per_sample = 2 if antithetic else 1
     n_samples = math.ceil((pilot.result.sample_std / target_std_error) ** 2)
     # Never run smaller than the pilot: a pilot that saw no payoff (deep OTM)
     # or a loose target would otherwise size a tiny final run whose own

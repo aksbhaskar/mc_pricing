@@ -213,6 +213,11 @@ def test_price_to_accuracy_caps_and_validates(atm_call):
     with pytest.warns(UserWarning, match="max_paths"):
         res = monte_carlo_price_to_accuracy(atm_call, 1e-6, max_paths=10_000, seed=32)
     assert res.n_paths_simulated == 10_000
+    with pytest.warns(UserWarning, match="max_paths"):
+        odd = monte_carlo_price_to_accuracy(atm_call, 1e-6, max_paths=10_001, seed=32)
+    assert odd.n_paths_simulated == 10_000
+    with pytest.raises(ValueError):
+        monte_carlo_price_to_accuracy(atm_call, 1e-2, max_paths=3)
     with pytest.raises(ValueError):
         monte_carlo_price_to_accuracy(atm_call, 0.0)
 
